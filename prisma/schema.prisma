@@ -1,0 +1,387 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CustomerType {
+  individual
+  organization
+
+  @@map("customer_type")
+}
+
+enum CustomerStatus {
+  active
+  archived
+
+  @@map("customer_status")
+}
+
+enum ContractStatus {
+  draft
+  pending_approval
+  active
+  completed
+  cancelled
+
+  @@map("contract_status")
+}
+
+enum InvoiceStatus {
+  draft
+  issued
+  partially_paid
+  paid
+  cancelled
+  void
+
+  @@map("invoice_status")
+}
+
+enum DiscountType {
+  percentage
+  fixed
+
+  @@map("discount_type")
+}
+
+enum PaymentMethod {
+  cash
+  bank_transfer
+  card
+  cheque
+
+  @@map("payment_method")
+}
+
+enum ReminderStatus {
+  scheduled
+  sent
+  failed
+  cancelled
+
+  @@map("reminder_status")
+}
+
+enum ReminderType {
+  pre_due
+  due_date
+  overdue
+
+  @@map("reminder_type")
+}
+
+enum DeliveryStatus {
+  pending
+  sent
+  failed
+
+  @@map("delivery_status")
+}
+
+enum NotificationStatus {
+  pending
+  sent
+  failed
+
+  @@map("notification_status")
+}
+
+enum NotificationType {
+  invoice_issued
+  invoice_overdue
+  invoice_significantly_overdue
+  payment_received
+  contract_expiring_soon
+
+  @@map("notification_type")
+}
+
+enum EmailTemplateType {
+  invoice_delivery
+  customer_reminder
+  admin_notification
+
+  @@map("email_template_type")
+}
+
+model Administrator {
+  administratorId      BigInt   @id @default(autoincrement()) @map("administrator_id")
+  email                String   @unique @db.VarChar(255)
+  passwordHash         String   @map("password_hash") @db.VarChar(255)
+
+  failedLoginAttempts  Int      @default(0) @map("failed_login_attempts")
+  lockedUntil          DateTime? @map("locked_until")
+
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  business                   Business?
+  administratorNotifications AdministratorNotification[]
+  authSessions               AuthSession[]
+
+  @@map("administrators")
+}
+
+model AuthSession {
+  sessionId        BigInt    @id @default(autoincrement()) @map("session_id")
+  administratorId  BigInt    @map("administrator_id")
+
+  refreshTokenHash String    @unique @map("refresh_token_hash") @db.VarChar(255)
+
+  createdAt        DateTime  @default(now()) @map("created_at")
+  lastActivityAt   DateTime  @default(now()) @map("last_activity_at")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+
+  administrator    Administrator @relation(fields: [administratorId],references: [administratorId])
+
+  @@index([administratorId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("auth_sessions")
+}
+
+model Business {
+  businessId     BigInt @id @default(autoincrement()) @map("business_id")
+  administratorId BigInt @unique @map("administrator_id")
+  businessName   String @map("business_name") @db.VarChar(255)
+  email          String @db.VarChar(255)
+  phone          String? @db.VarChar(50)
+  address        String? @db.Text
+  taxIdentifier  String? @map("tax_identifier") @db.VarChar(100)
+  currency       String @db.VarChar(10)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  logoUrl        String? @map("logo_url") @db.VarChar(500)
+
+  administrator  Administrator @relation(fields: [administratorId], references: [administratorId])
+  customers      Customer[]
+  contracts      Contract[]
+  invoices       Invoice[]
+  systemSettings SystemSetting?
+  emailTemplates EmailTemplate[]
+
+  @@map("businesses")
+}
+
+model Customer {
+  customerId    BigInt @id @default(autoincrement()) @map("customer_id")
+  businessId    BigInt @map("business_id")
+  name          String @db.VarChar(255)
+  email         String @db.VarChar(255)
+  phone         String? @db.VarChar(50)
+  address       String? @db.Text
+  customerType  CustomerType @map("customer_type")
+  status        CustomerStatus @default(active)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  business   Business @relation(fields: [businessId], references: [businessId])
+  contracts  Contract[]
+  invoices   Invoice[]
+
+  @@index([businessId])
+  @@unique([businessId, email])
+  @@index([businessId, name])
+  @@map("customers")
+}
+
+model Contract {
+  contractId       BigInt @id @default(autoincrement()) @map("contract_id")
+  businessId       BigInt @map("business_id")
+  customerId       BigInt @map("customer_id")
+  contractNumber   String @map("contract_number") @db.VarChar(100)
+  title            String @db.VarChar(255)
+  description      String? @db.Text
+  startDate        DateTime @map("start_date") @db.Date
+  endDate           DateTime @map("end_date") @db.Date
+  status           ContractStatus @default(draft)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  contractValue    Decimal @map("contract_value") @db.Decimal(12, 2)
+  billingFrequency String @map("billing_frequency") @db.VarChar(50)
+  isArchived       Boolean @default(false) @map("is_archived")
+
+  business                  Business @relation(fields: [businessId], references: [businessId])
+  customer                  Customer @relation(fields: [customerId], references: [customerId])
+  invoices                  Invoice[]
+  administratorNotifications AdministratorNotification[]
+
+  @@unique([businessId, contractNumber])
+  @@index([businessId])
+  @@index([customerId])
+  @@map("contracts")
+}
+
+model Invoice {
+  invoiceId       BigInt @id @default(autoincrement()) @map("invoice_id")
+  businessId      BigInt @map("business_id")
+  customerId      BigInt @map("customer_id")
+  contractId      BigInt? @map("contract_id")
+  invoiceNumber   String? @map("invoice_number") @db.VarChar(100)
+  issueDate       DateTime? @map("issue_date") @db.Date
+  dueDate         DateTime @map("due_date") @db.Date
+  status          InvoiceStatus @default(draft)
+  subtotal        Decimal @db.Decimal(12, 2)
+  discountType    DiscountType? @map("discount_type")
+  discountValue   Decimal? @map("discount_value") @db.Decimal(12, 2)
+  discountAmount  Decimal @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  taxRate         Decimal @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount       Decimal @default(0) @map("tax_amount") @db.Decimal(12, 2)
+  totalAmount     Decimal @map("total_amount") @db.Decimal(12, 2)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  business                  Business @relation(fields: [businessId], references: [businessId])
+  customer                  Customer @relation(fields: [customerId], references: [customerId])
+  contract                  Contract? @relation(fields: [contractId], references: [contractId])
+  invoiceItems              InvoiceItem[]
+  payments                  Payment[]
+  reminders                 Reminder[]
+  invoiceDeliveries         InvoiceDelivery[]
+  administratorNotifications AdministratorNotification[]
+
+  @@unique([businessId, invoiceNumber])
+  @@index([businessId])
+  @@index([customerId])
+  @@index([contractId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  invoiceItemId BigInt @id @default(autoincrement()) @map("invoice_item_id")
+  invoiceId     BigInt @map("invoice_id")
+  description  String @db.Text
+  quantity     Decimal @db.Decimal(12, 2)
+  unitPrice    Decimal @map("unit_price") @db.Decimal(12, 2)
+  lineTotal    Decimal @map("line_total") @db.Decimal(12, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [invoiceId])
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+model Payment {
+  paymentId      BigInt @id @default(autoincrement()) @map("payment_id")
+  invoiceId      BigInt @map("invoice_id")
+  paymentDate    DateTime @map("payment_date") @db.Date
+  amount         Decimal @db.Decimal(12, 2)
+  paymentMethod  PaymentMethod @map("payment_method")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  invoice                  Invoice @relation(fields: [invoiceId], references: [invoiceId])
+  administratorNotifications AdministratorNotification[]
+
+  @@index([invoiceId])
+  @@index([paymentDate])
+  @@map("payments")
+}
+
+model Reminder {
+  reminderId    BigInt @id @default(autoincrement()) @map("reminder_id")
+  invoiceId     BigInt @map("invoice_id")
+  scheduledAt   DateTime @map("scheduled_at")
+  sentAt        DateTime? @map("sent_at")
+  status        ReminderStatus @default(scheduled)
+  reminderType  ReminderType @map("reminder_type")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [invoiceId])
+
+  @@unique([invoiceId, reminderType, scheduledAt])
+  @@index([invoiceId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@map("reminders")
+}
+
+model InvoiceDelivery {
+  deliveryId      BigInt @id @default(autoincrement()) @map("delivery_id")
+  invoiceId       BigInt @map("invoice_id")
+  recipientEmail  String @map("recipient_email") @db.VarChar(255)
+  sentAt          DateTime? @map("sent_at")
+  status          DeliveryStatus
+  failureReason   String? @map("failure_reason") @db.Text
+
+  invoice Invoice @relation(fields: [invoiceId], references: [invoiceId])
+
+  @@index([invoiceId])
+  @@index([sentAt])
+  @@index([status])
+  @@map("invoice_deliveries")
+}
+
+model AdministratorNotification {
+  notificationId BigInt @id @default(autoincrement()) @map("notification_id")
+  administratorId BigInt @map("administrator_id")
+  invoiceId       BigInt? @map("invoice_id")
+  paymentId       BigInt? @map("payment_id")
+  contractId      BigInt? @map("contract_id")
+  type            NotificationType
+  createdAt       DateTime @default(now()) @map("created_at")
+  sentAt          DateTime? @map("sent_at")
+  status          NotificationStatus @default(pending)
+  failureReason   String? @map("failure_reason") @db.Text
+
+  administrator Administrator @relation(fields: [administratorId], references: [administratorId])
+  invoice       Invoice? @relation(fields: [invoiceId], references: [invoiceId])
+  payment       Payment? @relation(fields: [paymentId], references: [paymentId])
+  contract      Contract? @relation(fields: [contractId], references: [contractId])
+
+  @@index([administratorId])
+  @@index([invoiceId])
+  @@index([paymentId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([status])
+  @@map("administrator_notifications")
+}
+
+model SystemSetting {
+  settingsId                             BigInt @id @default(autoincrement()) @map("settings_id")
+  businessId                             BigInt @unique @map("business_id")
+  invoiceNumberPrefix                    String? @map("invoice_number_prefix") @db.VarChar(50)
+  invoiceNumberNextValue                 BigInt @default(1) @map("invoice_number_next_value")
+  currency                               String @db.VarChar(10)
+  defaultTaxRate                         Decimal @default(0) @map("default_tax_rate") @db.Decimal(5, 2)
+  reminderPreDueEnabled                  Boolean @default(true) @map("reminder_pre_due_enabled")
+  reminderPreDueDays                     Int? @map("reminder_pre_due_days") @default(7)
+  reminderDueDateEnabled                 Boolean @default(true) @map("reminder_due_date_enabled")
+  reminderOverdueEnabled                 Boolean @default(true) @map("reminder_overdue_enabled")
+  reminderOverdueDays                    Json? @map("reminder_overdue_days") @db.JsonB 
+  adminNotificationOverdueEnabled        Boolean @default(true) @map("admin_notification_overdue_enabled")
+  adminNotificationSignificantlyOverdueEnabled Boolean @default(true) @map("admin_notification_significantly_overdue_enabled")
+  adminNotificationPaymentReceivedEnabled    Boolean @default(true) @map("admin_notification_payment_received_enabled")
+  adminNotificationInvoiceIssuedEnabled      Boolean @default(true) @map("admin_notification_invoice_issued_enabled")
+  adminNotificationContractExpiringSoonEnabled Boolean @default(true) @map("admin_notification_contract_expiring_soon_enabled")
+  createdAt                              DateTime @default(now()) @map("created_at")
+  updatedAt                              DateTime @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [businessId])
+
+  @@map("system_settings")
+}
+
+model EmailTemplate {
+  emailTemplateId BigInt @id @default(autoincrement()) @map("email_template_id")
+  businessId      BigInt @map("business_id")
+  templateType    EmailTemplateType @map("template_type")
+  subject         String @db.VarChar(500)
+  body            String @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [businessId])
+
+  @@unique([businessId, templateType])
+  @@map("email_templates")
+}
