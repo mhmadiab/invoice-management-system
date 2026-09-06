@@ -1,0 +1,629 @@
+Project InvoiceManagementSystem_V1 {
+  database_type: "PostgreSQL"
+  Note: '''
+  V1 database design for the Invoice Management System.
+
+  Scope:
+  - Freelance business owners, initially focused on freelance software developers.
+  - Customer, contract, invoice, payment, reminder and reporting management.
+  - Invoice delivery by email in V1.
+  - Critical administrator email notifications.
+
+  API alignment notes:
+  - Public resource identifiers map to bigint/int64 database identifiers.
+  - Contract archival is represented by is_archived, separate from lifecycle status.
+  - Invoice overdue state and days overdue are derived values, not persisted fields.
+  - Remaining invoice balance and paid amount are derived from payments.
+  
+  Explicitly excluded from V1:
+  - Installments
+  - Recurring billing
+  - CSV functionality
+  - WhatsApp delivery
+  - Refund functionality
+  '''
+}
+
+/*
+========================================================
+ENUMERATIONS
+========================================================
+*/
+
+Enum customer_type {
+  individual
+  organization
+}
+
+Enum customer_status {
+  active
+  archived
+}
+
+Enum contract_status {
+  draft
+  pending_approval
+  active
+  completed
+  cancelled
+}
+
+Enum invoice_status {
+  draft
+  issued
+  partially_paid
+  paid
+  cancelled
+  void
+}
+
+Enum discount_type {
+  percentage
+  fixed
+}
+
+Enum payment_method {
+  cash
+  bank_transfer
+  card
+  cheque
+}
+
+Enum reminder_status {
+  scheduled
+  sent
+  failed
+  cancelled
+}
+
+Enum reminder_type {
+  pre_due
+  due_date
+  overdue
+}
+
+Enum delivery_status {
+  pending
+  sent
+  failed
+}
+
+Enum notification_status {
+  pending
+  sent
+  failed
+}
+
+Enum notification_type {
+  invoice_issued
+  invoice_overdue
+  invoice_significantly_overdue
+  payment_received
+  contract_expiring_soon
+}
+
+Enum email_template_type {
+  invoice_delivery
+  customer_reminder
+  admin_notification
+}
+
+/*
+========================================================
+AUTHENTICATION / BUSINESS
+========================================================
+*/
+
+Table administrators {
+  administrator_id bigint [pk, increment]
+  email varchar(255) [not null, unique]
+  password_hash varchar(255) [not null]
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+
+  Note: '''
+  Authenticated administrator responsible for managing
+  the freelance business and its system data.
+  '''
+}
+
+Table businesses {
+  business_id bigint [pk, increment]
+  administrator_id bigint [not null, unique]
+  business_name varchar(255) [not null]
+  email varchar(255) [not null]
+  phone varchar(50)
+  address text
+  tax_identifier varchar(100)
+  currency varchar(10) [not null]
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  logo_url varchar(500)
+
+  Note: '''
+  Represents the freelancer/business using the system.
+  V1 assumes one administrator manages one business.
+  '''
+}
+
+/*
+========================================================
+CUSTOMERS
+========================================================
+*/
+
+Table customers {
+  customer_id bigint [pk, increment]
+  business_id bigint [not null]
+  name varchar(255) [not null]
+  email varchar(255) [not null]
+  phone varchar(50)
+  address text
+  customer_type customer_type [not null]
+  status customer_status [not null, default: 'active']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+
+  indexes {
+    business_id
+    (business_id, email) [unique]
+    (business_id, name)
+  }
+
+  Note: '''
+  Represents an individual or organization receiving
+  services, contracts, invoices and reminders.
+  '''
+}
+
+/*
+========================================================
+CONTRACTS
+========================================================
+*/
+
+Table contracts {
+  contract_id bigint [pk, increment]
+  business_id bigint [not null]
+  customer_id bigint [not null]
+  contract_number varchar(100) [not null]
+  title varchar(255) [not null]
+  description text
+  start_date date [not null]
+  end_date date [not null]
+  status contract_status [not null, default: 'draft']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  contract_value decimal(12,2) [not null]
+  billing_frequency varchar(50) [not null]
+  is_archived boolean [not null, default: false]
+
+  indexes {
+    business_id
+    customer_id
+    (business_id, contract_number) [unique]
+  }
+
+  Note: '''
+  Represents an agreement between the business and a customer.
+
+  A contract may be associated with invoices for reference
+  and organization.
+
+  V1 does not automatically generate invoices from contracts.
+
+  Contract lifecycle status and archival state are independent.
+  is_archived = true preserves the current lifecycle status while
+  excluding the contract from active selections and expiration notifications.
+  Unarchiving sets is_archived = false without changing lifecycle status.
+  '''
+}
+
+/*
+========================================================
+INVOICES
+========================================================
+*/
+
+Table invoices {
+  invoice_id bigint [pk, increment]
+  business_id bigint [not null]
+  customer_id bigint [not null]
+  contract_id bigint
+
+  invoice_number varchar(100)
+  issue_date date
+  due_date date [not null]
+
+  status invoice_status [not null, default: 'draft']
+
+  subtotal decimal(12,2) [not null]
+  discount_type discount_type
+  discount_value decimal(12,2)
+  discount_amount decimal(12,2) [not null, default: 0]
+
+  tax_rate decimal(5,2) [not null, default: 0]
+  tax_amount decimal(12,2) [not null, default: 0]
+
+  total_amount decimal(12,2) [not null]
+
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+
+  indexes {
+    business_id
+    customer_id
+    contract_id
+    status
+    due_date
+    (business_id, invoice_number) [unique]
+  }
+
+  Note: '''
+  Core financial document.
+
+  invoice_number and issue_date are nullable while the invoice
+  is in Draft status.
+
+  The invoice number is assigned when the invoice is issued.
+
+  Remaining balance is NOT stored as an independently editable
+  field. It is calculated as:
+
+  total_amount - SUM(recorded payments)
+
+  Cancelled invoices remain stored.
+  Existing payment history is preserved.
+  V1 contains no refund functionality.
+
+  Overdue is NOT stored as invoice status or as a database column.
+  It is derived by the application/API as:
+  due_date < current date
+  AND remaining balance > 0
+  AND status NOT IN (cancelled, void).
+
+  daysOverdue is also derived by the application/API.
+  '''
+}
+
+/*
+========================================================
+INVOICE ITEMS
+========================================================
+*/
+
+Table invoice_items {
+  invoice_item_id bigint [pk, increment]
+  invoice_id bigint [not null]
+  description text [not null]
+  quantity decimal(12,2) [not null]
+  unit_price decimal(12,2) [not null]
+  line_total decimal(12,2) [not null]
+
+  indexes {
+    invoice_id
+  }
+
+  Note: '''
+  Individual services/items included in an invoice.
+
+  line_total = quantity * unit_price
+
+  Invoice subtotal = SUM(line_total)
+  '''
+}
+
+/*
+========================================================
+PAYMENTS
+========================================================
+*/
+
+Table payments {
+  payment_id bigint [pk, increment]
+  invoice_id bigint [not null]
+  payment_date date [not null]
+  amount decimal(12,2) [not null]
+  payment_method payment_method [not null]
+  created_at timestamp [not null]
+
+  indexes {
+    invoice_id
+    payment_date
+  }
+
+  Note: '''
+  Every payment belongs to exactly one invoice.
+
+  Payment amount must be greater than zero and must not
+  exceed the invoice's remaining balance.
+
+  Payment history remains recorded even if the invoice
+  is cancelled.
+  '''
+}
+
+/*
+========================================================
+CUSTOMER REMINDERS
+========================================================
+*/
+
+Table reminders {
+  reminder_id bigint [pk, increment]
+  invoice_id bigint [not null]
+  scheduled_at timestamp [not null]
+  sent_at timestamp
+  status reminder_status [not null, default: 'scheduled']
+  reminder_type reminder_type [not null]
+  created_at timestamp [not null]
+
+  indexes {
+    invoice_id
+    scheduled_at
+    status
+    (invoice_id, reminder_type, scheduled_at) [unique]
+  }
+
+  Note: '''
+  Stores scheduled customer invoice reminders.
+
+  V1 reminder schedule includes:
+  - Before due date
+  - On due date
+  - After the invoice meets the derived overdue condition
+
+  Further reminders stop once the invoice is fully paid.
+
+  Duplicate scheduled reminder occurrences must be prevented.
+  '''
+}
+
+/*
+========================================================
+INVOICE EMAIL DELIVERY
+========================================================
+*/
+
+Table invoice_deliveries {
+  delivery_id bigint [pk, increment]
+  invoice_id bigint [not null]
+  recipient_email varchar(255) [not null]
+  sent_at timestamp 
+  status delivery_status [not null]
+  failure_reason text
+
+  indexes {
+    invoice_id
+    sent_at
+    status
+  }
+
+  Note: '''
+  Records invoice email delivery attempts.
+
+  An invoice can have multiple delivery attempts because
+  a previous attempt may fail and be retried.
+
+  V1 invoice delivery channel: Email.
+  WhatsApp is outside V1.
+  '''
+}
+
+/*
+========================================================
+ADMINISTRATOR NOTIFICATIONS
+========================================================
+*/
+
+Table administrator_notifications {
+  notification_id bigint [pk, increment]
+  administrator_id bigint [not null]
+
+  invoice_id bigint
+  payment_id bigint
+  contract_id bigint
+
+  type notification_type [not null]
+  created_at timestamp [not null]
+  sent_at timestamp
+  status notification_status [not null, default: 'pending']
+  failure_reason text
+
+  indexes {
+    administrator_id
+    invoice_id
+    payment_id
+    type
+    created_at
+    status
+  }
+
+  Note: '''
+  Stores critical administrator notification events.
+
+  Examples:
+  - Invoice issued
+  - Invoice meets the derived overdue condition
+  - Invoice reaches the configured significantly-overdue threshold
+  - Payment received
+  - Contract is expiring soon
+
+  invoice_id, payment_id and contract_id are optional
+  because different notification types can be associated
+  with different business events.
+  '''
+}
+
+/*
+========================================================
+SYSTEM SETTINGS
+========================================================
+*/
+
+Table system_settings {
+  settings_id bigint [pk, increment]
+  business_id bigint [not null, unique]
+
+  invoice_number_prefix varchar(50)
+  invoice_number_next_value bigint [not null, default: 1]
+
+  currency varchar(10) [not null]
+  default_tax_rate decimal(5,2) [not null, default: 0]
+
+  reminder_pre_due_enabled boolean [not null, default: true]
+  reminder_pre_due_days integer
+
+  reminder_due_date_enabled boolean [not null, default: true]
+
+  reminder_overdue_enabled boolean [not null, default: true]
+  reminder_overdue_days jsonb
+
+  admin_notification_overdue_enabled boolean [not null, default: true]
+  admin_notification_significantly_overdue_enabled boolean [not null, default: true]
+  admin_notification_payment_received_enabled boolean [not null, default: true]
+  admin_notification_invoice_issued_enabled boolean [not null, default: true]
+  admin_notification_contract_expiring_soon_enabled boolean [not null, default: true]
+
+
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+
+  Note: '''
+  Stores configurable business/system settings.
+
+  Includes:
+  - Invoice numbering
+  - Currency
+  - Default tax rate
+  - Reminder schedule
+  - Critical administrator notification preferences
+
+  The exact notification email-template storage can be
+  normalized into a separate table if required by the
+  final application design.
+  '''
+}
+
+/*
+========================================================
+OPTIONAL EMAIL TEMPLATE STORAGE
+========================================================
+*/
+
+Table email_templates {
+  email_template_id bigint [pk, increment]
+  business_id bigint [not null]
+  template_type email_template_type [not null]
+  subject varchar(500) [not null]
+  body text [not null]
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+
+  indexes {
+    (business_id, template_type) [unique]
+  }
+
+  Note: '''
+  Stores customizable email subjects and bodies.
+
+  This supports the requirement that critical administrator
+  emails and other system emails can use customizable templates.
+  '''
+}
+
+/*
+========================================================
+RELATIONSHIPS
+========================================================
+*/
+
+/*
+Administrator 1 : 1 Business
+Each Business belongs to exactly one Administrator.
+*/
+Ref: businesses.administrator_id - administrators.administrator_id
+
+/*
+Business 1 : N Customer
+*/
+Ref: customers.business_id > businesses.business_id
+
+/*
+Business 1 : N Contract
+*/
+Ref: contracts.business_id > businesses.business_id
+
+/*
+Customer 1 : N Contract
+*/
+Ref: contracts.customer_id > customers.customer_id
+
+/*
+Business 1 : N Invoice
+*/
+Ref: invoices.business_id > businesses.business_id
+
+/*
+Customer 1 : N Invoice
+*/
+Ref: invoices.customer_id > customers.customer_id
+
+/*
+Contract 1 : N Invoice
+Invoice -> Contract is optional because contract_id is nullable.
+*/
+Ref: invoices.contract_id > contracts.contract_id
+
+/*
+Invoice 1 : N InvoiceItem
+*/
+Ref: invoice_items.invoice_id > invoices.invoice_id
+
+/*
+Invoice 1 : N Payment
+*/
+Ref: payments.invoice_id > invoices.invoice_id
+
+/*
+Invoice 1 : N Reminder
+*/
+Ref: reminders.invoice_id > invoices.invoice_id
+
+/*
+Invoice 1 : N InvoiceDelivery
+*/
+Ref: invoice_deliveries.invoice_id > invoices.invoice_id
+
+/*
+Administrator 1 : N AdministratorNotification
+*/
+Ref: administrator_notifications.administrator_id > administrators.administrator_id
+
+/*
+Invoice 1 : N AdministratorNotification
+Optional from AdministratorNotification side.
+*/
+Ref: administrator_notifications.invoice_id > invoices.invoice_id
+
+/*
+Payment 1 : N AdministratorNotification
+Optional from AdministratorNotification side.
+*/
+Ref: administrator_notifications.payment_id > payments.payment_id
+
+/*
+Business 1 : 1 SystemSettings
+*/
+Ref: system_settings.business_id - businesses.business_id
+
+/*
+Business 1 : N EmailTemplate
+*/
+Ref: email_templates.business_id > businesses.business_id
+
+/*
+Contract 1 : N AdministratorNotification
+Optional from AdministratorNotification side.
+*/
+Ref: administrator_notifications.contract_id > contracts.contract_id

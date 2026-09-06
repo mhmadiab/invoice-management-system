@@ -1,0 +1,26 @@
+services:
+  postgres-dev:
+    image: postgres:18
+    container_name: ims-postgres-dev
+
+    ports:
+      - "5432:5432"
+
+    environment:
+      POSTGRES_USER: ims_dev
+      POSTGRES_PASSWORD: ims_dev_password
+      POSTGRES_DB: invoice_management_dev
+
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ims_dev -d invoice_management_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+volumes:
+  postgres_dev_data:
