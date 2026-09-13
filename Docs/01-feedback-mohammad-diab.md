@@ -6,7 +6,6 @@
 
 ---
 
-
 ## Functional Requirements
 
 ### Module 1: Authentication

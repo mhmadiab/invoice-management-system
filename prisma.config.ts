@@ -5,10 +5,10 @@ import "dotenv/config";
 import { defineConfig, env } from "prisma/config";
 
 export default defineConfig({
-  schema: "prisma/schema.prisma",
+  schema: "src/prisma/schema.prisma",
   migrations: {
-    path: "prisma/migrations",
-    seed: "npx tsx prisma/seed.ts",
+    path: "src/prisma/migrations",
+    seed: "npx tsx src/prisma/seed.ts",
   },
   engine: "classic",
   datasource: {
