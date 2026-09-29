@@ -1,23 +1,28 @@
+import type { IUnitOfWork, RepositoryContext } from "@/types/repositories";
+import { createRepositories } from "./context";
 import { Prisma } from "@/app/generated/prisma/client";
 import { getPrisma } from "@/prisma/client";
 import { ApplicationError } from "@/types/errors";
 
 export type Database = Prisma.TransactionClient;
 
-export async function transaction<T>(work: (database: Database) => Promise<T>): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await getPrisma().$transaction(work, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        maxWait: 10000,
-        timeout: 15000,
-      });
-    } catch (error) {
-      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2034" || attempt >= 4) throw error;
+/** concrete Prisma implementation */
+export class PrismaUnitOfWork implements IUnitOfWork {
+  //all operations inside that run() use the same transaction.
+  async run<T>(work: (repositories: RepositoryContext) => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await getPrisma().$transaction(database => work(createRepositories(() => database)), {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          maxWait: 10000,
+          timeout: 15000,
+        });
+      } catch (error) {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2034" || attempt >= 4) throw error;
+      }
     }
   }
 }
-
 
 //This function is Helper to translates Prisma errors into application errors
 export function persistenceError(error: unknown): unknown {

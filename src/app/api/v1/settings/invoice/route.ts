@@ -1,10 +1,10 @@
+import { services } from "@/services/container";
 import { route } from "@/app/api/_lib/http";
-import { getInvoiceSettings, updateInvoiceSettings } from "@/services/settings";
 import { invoiceSettingsSchema } from "@/types/settings";
 
 export const runtime = "nodejs";
 
-export const GET = route({  }, ({ actor }) => getInvoiceSettings(actor));
+export const GET = route({  }, ({ actor }) => services.settings.getInvoiceSettings(actor));
 
-export const PUT = route({ body: invoiceSettingsSchema }, ({ actor, body }) => updateInvoiceSettings(actor, body));
+export const PUT = route({ body: invoiceSettingsSchema }, ({ actor, body }) => services.settings.updateInvoiceSettings(actor, body));
 

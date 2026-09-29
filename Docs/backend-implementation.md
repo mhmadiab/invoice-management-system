@@ -21,6 +21,33 @@ business logic in `src/services`, data access in `src/repository`, and shared
 Zod input schemas/application types in `src/types`. Services have no HTTP
 dependencies; routes do not query Prisma. Frontend files are unchanged.
 
+### Classes, interfaces, and dependency injection
+
+Domain operations now live on service instances, such as `CustomerService`,
+`InvoiceService`, and `PaymentService`. The core customer/invoice/payment service
+contracts are in `src/types/services.ts`. Repository contracts are in
+`src/types/repositories.ts`; each `Prisma*Repository` class implements its
+corresponding interface. These contracts reuse the current Prisma model and
+input types; they do not claim to be independent of Prisma's type system.
+
+Constructors receive dependencies through interfaces. For example,
+`CustomerService` receives `ICustomerRepository` and `IUnitOfWork`. Its archive
+operation uses `unitOfWork.run(...)`; the callback receives repositories bound
+to one transaction. `PrismaUnitOfWork` preserves serializable isolation and
+conflict retries. Services cannot accidentally create a new database connection
+inside that callback through a repository factory.
+
+`src/services/container.ts` wires the concrete implementations and exports
+`services`. A route calls `services.customers.createCustomer(actor, body)`.
+Repository database access and SMTP setup remain lazy. Instances store
+dependencies, while request-specific identity and data stay in method arguments.
+`IEmailSender`, `IInvoicePdfRenderer`, and `ISchedulerLock` make external
+dependencies replaceable. `createServices({ email, pdf })` supports test providers.
+
+Next.js route exports remain functions as required by the framework. Decimal
+calculations, date helpers, validation, and DTO mapping remain pure functions.
+There is no generic CRUD superclass: each class expresses its domain's operations.
+
 ## Resolved contract conflicts
 
 | Operation/model | Original OpenAPI expectation | Prisma definition | Approved resolution |
@@ -51,6 +78,16 @@ unchanged. No identified API/Prisma conflict remains blocked.
   removed so the type checker can run.
 
 ## Coverage and validation
+
+For the OOP refactor, TypeScript passes and ESLint reports no errors (one warning
+in the separately edited `src/config/index.ts`). The unit/contract/service suite
+passes 14 tests. The new
+service tests cover outstanding balances, business isolation, and use of the
+transaction's repository rather than the service's nontransactional repository.
+The PostgreSQL integration suite was updated to inject email/PDF providers through
+constructors, but could not be rerun because Docker Desktop's engine was unavailable.
+The production build and HTTP smoke checks were not rerun for this refactor.
+The results below describe the original implementation's verification.
 
 All **47 operations across 36 paths** are implemented. There are no unimplemented
 OpenAPI endpoints or intentional code TODOs. See [the endpoint coverage table](backend-coverage.md)
@@ -193,12 +230,16 @@ operation with its OpenAPI definition. POST `/api/v1/customers` is a small examp
 1. `src/app/api/v1/customers/route.ts`: selects the request schema and service.
 2. `src/app/api/_lib/http.ts`: authentication, parsing, error mapping, and JSON.
 3. `src/types/customers.ts`: reusable Zod request schemas and inferred types.
-4. `src/services/customers.ts`: business rules and external response-field mapping.
-5. `src/repository/customers.ts`: business-scoped Prisma queries.
-6. `src/prisma/client.ts`: the shared generated Prisma client instance.
+4. `src/types/services.ts` and `src/types/repositories.ts`: service and persistence interfaces.
+5. `src/services/customers.ts`: `CustomerService`, business rules, and response mapping.
+6. `src/repository/customers.ts`: `PrismaCustomerRepository` and business-scoped queries.
+7. `src/services/container.ts`: constructor injection and concrete implementation wiring.
+8. `src/prisma/client.ts`: the shared generated Prisma client instance.
 
 Then follow `issueInvoice` and `createPayment` in the invoice/payment services,
 with `services/financial.ts` and `repository/transaction.ts` beside them. These
 show the lifecycle rules, Decimal arithmetic, and atomic writes. Finally, review
 `tests/api.integration.test.ts` for complete request/response workflows, and
 `tests/contract-helper.ts` for validation against the actual OpenAPI schemas.
+`tests/services.test.ts` demonstrates testing `CustomerService` with interface
+implementations, including archive balance checks and transaction-scoped access.

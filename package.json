@@ -11,7 +11,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
-    "test": "tsx --test tests/unit.test.ts tests/contract.test.ts",
+    "test": "tsx --test tests/unit.test.ts tests/contract.test.ts tests/services.test.ts",
     "test:integration": "tsx --test --test-concurrency=1 tests/api.integration.test.ts",
     "test:production": "tsx tests/production-smoke.ts",
     "reminders:process": "tsx scripts/process-reminders.ts"

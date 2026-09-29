@@ -1,10 +1,10 @@
+import { services } from "@/services/container";
 import { z } from "zod";
 import { parse, stringify, LosslessNumber } from "lossless-json";
 import { Prisma } from "@/app/generated/prisma/client";
 import { ApplicationError } from "@/types/errors";
 import type { Actor } from "@/types/context";
 import { emptyParamsSchema, emptyQuerySchema } from "@/types/common";
-import { authenticate } from "@/services/auth";
 import { persistenceError } from "@/repository/transaction";
 
 
@@ -66,7 +66,7 @@ export function apiHandler(handler: (request: Request, context: HttpContext) => 
 export async function requireActor(request: Request) {
   const authorization = request.headers.get("authorization");
   const token = authorization?.match(/^Bearer ([^\s]+)$/i)?.[1];
-  return authenticate(token);
+  return services.auth.authenticate(token);
 }
 
 

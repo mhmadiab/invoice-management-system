@@ -1,10 +1,10 @@
+import { services } from "@/services/container";
 import "dotenv/config";
-import { processReminders } from "../src/services/scheduler";
 import { getPrisma } from "../src/prisma/client";
 
 try {
   if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) throw new Error("SMTP configuration is required.");
-  console.log(await processReminders({
+  console.log(await services.scheduler.processReminders({
     significantlyOverdueDays: Number(process.env.SIGNIFICANTLY_OVERDUE_DAYS),
     contractExpiringSoonDays: Number(process.env.CONTRACT_EXPIRING_SOON_DAYS),
   }));

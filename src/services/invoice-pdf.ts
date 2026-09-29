@@ -1,12 +1,13 @@
+import type { IInvoiceRepository, DocumentInvoice } from "@/types/repositories";
 import PDFDocument from "pdfkit";
-import { invoiceRepository } from "@/repository/invoices";
+import type { IInvoicePdfRenderer } from "@/types/providers";
 import type { Actor } from "@/types/context";
 import { required } from "@/types/errors";
 import { dateOnly } from "./dates";
 import { invoiceBalance } from "./financial";
 import { readLogo } from "./pdf-assets";
 
-export type DocumentInvoice = NonNullable<Awaited<ReturnType<ReturnType<typeof invoiceRepository>["forDocument"]>>>;
+export type { DocumentInvoice } from "@/types/repositories";
 export const pdfFilename = (invoice: DocumentInvoice) => `${(invoice.invoiceNumber ?? `draft-${invoice.invoiceId}`).replace(/[^A-Za-z0-9._-]/g, "_")}.pdf`;
 
 export async function renderInvoicePdf(invoice: DocumentInvoice): Promise<Buffer> {
@@ -42,7 +43,21 @@ export async function renderInvoicePdf(invoice: DocumentInvoice): Promise<Buffer
   document.end();
   return result;
 }
-export async function invoicePdf(actor: Actor, invoiceId: bigint) {
-  const invoice = required(await invoiceRepository().forDocument(actor.businessId, invoiceId), "invoice");
-  return { bytes: await renderInvoicePdf(invoice), filename: pdfFilename(invoice) };
+
+export class InvoicePdfService {
+  constructor(
+    private readonly invoices: IInvoiceRepository,
+    private readonly renderer: IInvoicePdfRenderer,
+  ) {}
+
+  async invoicePdf(actor: Actor, invoiceId: bigint) {
+    const invoice = required(await this.invoices.forDocument(actor.businessId, invoiceId), "invoice");
+    return { bytes: await this.renderer.render(invoice), filename: pdfFilename(invoice) };
+  }
+}
+
+export class PdfKitInvoiceRenderer implements IInvoicePdfRenderer {
+  render(invoice: DocumentInvoice): Promise<Buffer> {
+    return renderInvoicePdf(invoice);
+  }
 }

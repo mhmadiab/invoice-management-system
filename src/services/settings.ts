@@ -1,7 +1,5 @@
+import type { ISettingsRepository, IUnitOfWork } from "@/types/repositories";
 import type { Business, EmailTemplate, EmailTemplateType, SystemSetting } from "@/app/generated/prisma/client";
-import { settingsRepository } from "@/repository/settings";
-import { invoiceRepository } from "@/repository/invoices";
-import { transaction } from "@/repository/transaction";
 import type { Actor } from "@/types/context";
 import type { BusinessSettingsInput, EmailTemplateInput, InvoiceSettingsInput, NotificationSettingsInput, ReminderSettingsInput } from "@/types/settings";
 import { conflict, required } from "@/types/errors";
@@ -18,56 +16,72 @@ export const reminderSettingsDto = (settings: SystemSetting) => ({ preDueEnabled
 export const notificationSettingsDto = (settings: SystemSetting) => ({ overdueInvoiceEnabled: settings.adminNotificationOverdueEnabled, significantlyOverdueInvoiceEnabled: settings.adminNotificationSignificantlyOverdueEnabled, paymentReceivedEnabled: settings.adminNotificationPaymentReceivedEnabled, invoiceIssuedEnabled: settings.adminNotificationInvoiceIssuedEnabled, contractExpiringSoonEnabled: settings.adminNotificationContractExpiringSoonEnabled });
 export const templateDto = (template: EmailTemplate) => ({ id: template.emailTemplateId, templateType: template.templateType, subject: template.subject, body: template.body });
 
-export async function getBusinessSettings(actor: Actor) {
-  return { data: businessDto(required(await settingsRepository().business(actor.businessId), "business")) };
-}
-export async function updateBusinessSettings(actor: Actor, input: BusinessSettingsInput) {
-  return { data: businessDto(await settingsRepository().updateBusiness(actor.businessId, input)) };
-}
-export async function getInvoiceSettings(actor: Actor) {
-  return transaction(async database => ({ data: invoiceSettingsDto(await ensureSettings(actor.businessId, database)) }));
-}
-export async function updateInvoiceSettings(actor: Actor, input: InvoiceSettingsInput) {
-  return transaction(async database => {
-    const current = await ensureSettings(actor.businessId, database);
-    const numbers = await invoiceRepository(database).usedNumbers(actor.businessId);
-    const prefix = input.invoicePrefix ? `${input.invoicePrefix}-` : "";
-    const conflicts = numbers.some(({ invoiceNumber }) => {
-      if (invoiceNumber === formatInvoiceNumber(input.invoicePrefix, input.nextInvoiceNumber)) return true;
-      if (!invoiceNumber?.startsWith(prefix)) return false;
-      const suffix = invoiceNumber.slice(prefix.length);
-      return /^\d+$/.test(suffix) && BigInt(suffix) >= input.nextInvoiceNumber;
+export class SettingsService {
+  constructor(
+    private readonly settings: ISettingsRepository,
+    private readonly unitOfWork: IUnitOfWork,
+  ) {}
+
+  async getBusinessSettings(actor: Actor) {
+    return { data: businessDto(required(await this.settings.business(actor.businessId), "business")) };
+  }
+
+  async updateBusinessSettings(actor: Actor, input: BusinessSettingsInput) {
+    return { data: businessDto(await this.settings.updateBusiness(actor.businessId, input)) };
+  }
+
+  async getInvoiceSettings(actor: Actor) {
+    return this.unitOfWork.run(async repositories => ({ data: invoiceSettingsDto(await ensureSettings(actor.businessId, repositories.settings)) }));
+  }
+
+  async updateInvoiceSettings(actor: Actor, input: InvoiceSettingsInput) {
+    return this.unitOfWork.run(async repositories => {
+      const current = await ensureSettings(actor.businessId, repositories.settings);
+      const numbers = await repositories.invoices.usedNumbers(actor.businessId);
+      const prefix = input.invoicePrefix ? `${input.invoicePrefix}-` : "";
+      const conflicts = numbers.some(({ invoiceNumber }) => {
+        if (invoiceNumber === formatInvoiceNumber(input.invoicePrefix, input.nextInvoiceNumber)) return true;
+        if (!invoiceNumber?.startsWith(prefix)) return false;
+        const suffix = invoiceNumber.slice(prefix.length);
+        return /^\d+$/.test(suffix) && BigInt(suffix) >= input.nextInvoiceNumber;
+      });
+      if (conflicts || (current.invoiceNumberPrefix === input.invoicePrefix && input.nextInvoiceNumber < current.invoiceNumberNextValue)) conflict("INVOICE_SEQUENCE_CONFLICT", "The specified invoice sequence would reuse an existing invoice number.");
+      return { data: invoiceSettingsDto(await repositories.settings.update(actor.businessId, { invoiceNumberPrefix: input.invoicePrefix, invoiceNumberNextValue: input.nextInvoiceNumber, defaultTaxRate: input.defaultTaxRate })) };
     });
-    if (conflicts || (current.invoiceNumberPrefix === input.invoicePrefix && input.nextInvoiceNumber < current.invoiceNumberNextValue)) conflict("INVOICE_SEQUENCE_CONFLICT", "The specified invoice sequence would reuse an existing invoice number.");
-    return { data: invoiceSettingsDto(await settingsRepository(database).update(actor.businessId, { invoiceNumberPrefix: input.invoicePrefix, invoiceNumberNextValue: input.nextInvoiceNumber, defaultTaxRate: input.defaultTaxRate })) };
-  });
-}
-export async function getReminderSettings(actor: Actor) {
-  return transaction(async database => ({ data: reminderSettingsDto(await ensureSettings(actor.businessId, database)) }));
-}
-export async function updateReminderSettings(actor: Actor, input: ReminderSettingsInput) {
-  return transaction(async database => {
-    await ensureSettings(actor.businessId, database);
-    return { data: reminderSettingsDto(await settingsRepository(database).update(actor.businessId, { reminderPreDueEnabled: input.preDueEnabled, reminderPreDueDays: input.preDueDays, reminderDueDateEnabled: input.dueDateEnabled, reminderOverdueEnabled: input.overdueEnabled, reminderOverdueDays: input.overdueDays })) };
-  });
-}
-export async function getNotificationSettings(actor: Actor) {
-  return transaction(async database => ({ data: notificationSettingsDto(await ensureSettings(actor.businessId, database)) }));
-}
-export async function updateNotificationSettings(actor: Actor, input: NotificationSettingsInput) {
-  return transaction(async database => {
-    await ensureSettings(actor.businessId, database);
-    return { data: notificationSettingsDto(await settingsRepository(database).update(actor.businessId, { adminNotificationOverdueEnabled: input.overdueInvoiceEnabled, adminNotificationSignificantlyOverdueEnabled: input.significantlyOverdueInvoiceEnabled, adminNotificationPaymentReceivedEnabled: input.paymentReceivedEnabled, adminNotificationInvoiceIssuedEnabled: input.invoiceIssuedEnabled, adminNotificationContractExpiringSoonEnabled: input.contractExpiringSoonEnabled })) };
-  });
-}
-export async function listEmailTemplates(actor: Actor) {
-  return { data: (await settingsRepository().templates(actor.businessId)).map(templateDto) };
-}
-export async function updateEmailTemplate(actor: Actor, type: EmailTemplateType, input: EmailTemplateInput) {
-  validateTemplate(input);
-  return transaction(async database => {
-    const repository = settingsRepository(database);
-    required(await repository.template(actor.businessId, type), "resource");
-    return { data: templateDto(await repository.updateTemplate(actor.businessId, type, input)) };
-  });
+  }
+
+  async getReminderSettings(actor: Actor) {
+    return this.unitOfWork.run(async repositories => ({ data: reminderSettingsDto(await ensureSettings(actor.businessId, repositories.settings)) }));
+  }
+
+  async updateReminderSettings(actor: Actor, input: ReminderSettingsInput) {
+    return this.unitOfWork.run(async repositories => {
+      await ensureSettings(actor.businessId, repositories.settings);
+      return { data: reminderSettingsDto(await repositories.settings.update(actor.businessId, { reminderPreDueEnabled: input.preDueEnabled, reminderPreDueDays: input.preDueDays, reminderDueDateEnabled: input.dueDateEnabled, reminderOverdueEnabled: input.overdueEnabled, reminderOverdueDays: input.overdueDays })) };
+    });
+  }
+
+  async getNotificationSettings(actor: Actor) {
+    return this.unitOfWork.run(async repositories => ({ data: notificationSettingsDto(await ensureSettings(actor.businessId, repositories.settings)) }));
+  }
+
+  async updateNotificationSettings(actor: Actor, input: NotificationSettingsInput) {
+    return this.unitOfWork.run(async repositories => {
+      await ensureSettings(actor.businessId, repositories.settings);
+      return { data: notificationSettingsDto(await repositories.settings.update(actor.businessId, { adminNotificationOverdueEnabled: input.overdueInvoiceEnabled, adminNotificationSignificantlyOverdueEnabled: input.significantlyOverdueInvoiceEnabled, adminNotificationPaymentReceivedEnabled: input.paymentReceivedEnabled, adminNotificationInvoiceIssuedEnabled: input.invoiceIssuedEnabled, adminNotificationContractExpiringSoonEnabled: input.contractExpiringSoonEnabled })) };
+    });
+  }
+
+  async listEmailTemplates(actor: Actor) {
+    return { data: (await this.settings.templates(actor.businessId)).map(templateDto) };
+  }
+
+  async updateEmailTemplate(actor: Actor, type: EmailTemplateType, input: EmailTemplateInput) {
+    validateTemplate(input);
+    return this.unitOfWork.run(async repositories => {
+      const repository = repositories.settings;
+      required(await repository.template(actor.businessId, type), "resource");
+      return { data: templateDto(await repository.updateTemplate(actor.businessId, type, input)) };
+    });
+  }
 }

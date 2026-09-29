@@ -1,9 +1,7 @@
-import { settingsRepository } from "@/repository/settings";
-import type { Database } from "@/repository/transaction";
+import type { ISettingsRepository } from "@/types/repositories";
 import { required } from "@/types/errors";
 
-export async function ensureSettings(businessId: bigint, database: Database) {
-  const repository = settingsRepository(database);
+export async function ensureSettings(businessId: bigint, repository: ISettingsRepository) {
   const current = await repository.get(businessId);
   if (current) return current;
   const business = required(await repository.business(businessId), "business");

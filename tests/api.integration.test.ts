@@ -1,12 +1,10 @@
+import { createServices, services } from "@/services/container";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import bcrypt from "bcryptjs";
 import { getPrisma } from "@/prisma/client";
-import { sendInvoice } from "@/services/deliveries";
-import { processReminders } from "@/services/scheduler";
-import { authenticate } from "@/services/auth";
 import { dateOnly, DAY_MS } from "@/services/dates";
 import { allOperations, assertResponse, routeFile } from "./contract-helper";
 
@@ -129,9 +127,12 @@ test("V1 API: PostgreSQL workflows, contract responses, isolation, and concurren
     });
 
     await t.test("Delivery failures are retained and successful delivery attaches a PDF", async () => {
-      const actor = await authenticate(token);
-      await assert.rejects(sendInvoice(actor, BigInt(invoiceId), { send: async () => { throw new Error("private provider secret"); }, pdf: async () => Buffer.from("%PDF-test") }));
-      const sent = await sendInvoice(actor, BigInt(invoiceId), { send: async message => { assert.equal(message.to, `customer-${unique}@example.com`); assert.equal(message.attachments?.[0].contentType, "application/pdf"); }, pdf: async () => Buffer.from("%PDF-test") });
+      const actor = await services.auth.authenticate(token);
+      const pdf = { render: async () => Buffer.from("%PDF-test") };
+      const failing = createServices({ email: { send: async () => { throw new Error("private provider secret"); } }, pdf });
+      await assert.rejects(failing.deliveries.sendInvoice(actor, BigInt(invoiceId)));
+      const successful = createServices({ email: { send: async message => { assert.equal(message.to, `customer-${unique}@example.com`); assert.equal(message.attachments?.[0].contentType, "application/pdf"); } }, pdf });
+      const sent = await successful.deliveries.sendInvoice(actor, BigInt(invoiceId));
       assert.equal(sent.data.status, "sent");
       const deliveries = await call("GET", "/invoices/{invoiceId}/deliveries", { ...auth(), params: invoiceParams(), expected: 200 });
       assert.equal((deliveries.body.data as unknown[]).length, 2);
@@ -190,10 +191,11 @@ test("V1 API: PostgreSQL workflows, contract responses, isolation, and concurren
       await call("POST", "/invoices/{invoiceId}/issue", { ...auth(), params: { invoiceId: id }, expected: 200 });
       let sent = 0;
       const send = async () => { sent++; };
-      const first = await processReminders({ significantlyOverdueDays: 30, contractExpiringSoonDays: 30 }, new Date(), send);
+      const worker = createServices({ email: { send } }).scheduler;
+      const first = await worker.processReminders({ significantlyOverdueDays: 30, contractExpiringSoonDays: 30 }, new Date());
       assert.ok(first && first.remindersSent >= 1);
       const afterFirst = sent;
-      await processReminders({ significantlyOverdueDays: 30, contractExpiringSoonDays: 30 }, new Date(), send);
+      await worker.processReminders({ significantlyOverdueDays: 30, contractExpiringSoonDays: 30 }, new Date());
       assert.equal(sent, afterFirst);
     });
 
