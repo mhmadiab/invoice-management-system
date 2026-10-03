@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { emailSchema, nameSchema, nonempty, paginationSchema } from "./common";
 
+/*validations points defining what endpoint must receive*/
+
 export const customerTypeSchema = z.enum(["individual", "organization"]);
 export const customerStatusSchema = z.enum(["active", "archived"]);
 const customerShape = {

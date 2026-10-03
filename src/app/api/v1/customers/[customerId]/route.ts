@@ -5,7 +5,14 @@ import { updateCustomerSchema } from "@/types/customers";
 
 export const runtime = "nodejs";
 
+/**
+ * It handles operations on one specific customer.
+ * 
+ */
+
+/** get one customer */
 export const GET = route({ params: customerParamsSchema }, ({ actor, params }) => services.customers.getCustomer(actor, params.customerId));
 
+/** update one customer */
 export const PATCH = route({ params: customerParamsSchema, body: updateCustomerSchema }, ({ actor, params, body }) => services.customers.updateCustomer(actor, params.customerId, body));
 

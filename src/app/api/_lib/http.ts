@@ -55,8 +55,12 @@ export type HttpContext = { params: Promise<Record<string, string>> };
 //Run the API code. If anything throws an error, catch it and convert it into a proper HTTP response
 export function apiHandler(handler: (request: Request, context: HttpContext) => Promise<Response>) {
   return async (request: Request, context: HttpContext = { params: Promise.resolve({}) }): Promise<Response> => {
-    try { return await handler(request, context); }
-    catch (error) { return errorResponse(error); }
+    try {
+      // Collection routes may be invoked without params; always provide an object.
+      const params = context?.params ?? Promise.resolve({});
+      return await handler(request, { ...context, params });
+    }
+    catch (error) { return errorResponse(error); }  
   };
 }
 

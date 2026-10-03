@@ -14,7 +14,6 @@ type InvoiceDto = ReturnType<typeof invoiceDto>;
 type PaymentDto = ReturnType<typeof paymentDto>;
 type PaymentResult = { invoice: ReturnType<typeof paymentSummary> };
 
-// These are application results before the HTTP layer serializes BigInt/Decimal.
 export interface ICustomerService {
   createCustomer(actor: Actor, input: CreateCustomerInput): Promise<Data<CustomerDto>>;
   listCustomers(actor: Actor, query: CustomerQuery): Promise<Paged<CustomerDto>>;
