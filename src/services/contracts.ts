@@ -17,17 +17,21 @@ export class ContractService {
     private readonly unitOfWork: IUnitOfWork,
   ) {}
 
+  /** A contract belongs to one customer, and archived customers should not be selected for new active records. */
   async createContract(actor: Actor, input: CreateContractInput) {
     const contractNumber = `CTR-${randomUUID()}`;
     return this.unitOfWork.run(async repositories => {
+      /** get customer */
       const customer = required(await repositories.customers.get(actor.businessId, input.customerId), "customer");
       if (customer.status === "archived") invalid("customerId", "Select an active customer.");
+      /** create related contract */
       return { data: contractDto(await repositories.contracts.create({ businessId: actor.businessId, customerId: input.customerId, contractNumber, title: input.title, description: input.description, startDate: asDate(input.startDate), endDate: asDate(input.expirationDate), contractValue: input.contractValue, billingFrequency: input.billingFrequency })) };
     });
   }
 
   async listContracts(actor: Actor, query: ContractQuery, customerId?: bigint) {
     return this.unitOfWork.run(async repositories => {
+      /** check the passed parameter and get customer  */
       if (customerId !== undefined) required(await repositories.customers.get(actor.businessId, customerId), "customer");
       const { rows, count } = await repositories.contracts.list(actor.businessId, { ...query, customerId: customerId ?? query.customerId });
       return { data: rows.map(contractDto), pagination: pagination(query, count) };
