@@ -1,6 +1,6 @@
 import { ApplicationError } from "@/types/errors";
 import { SESSION_SECONDS } from "@/services/tokens";
-import config from '@/config'
+import config from "@/config";
 
 
 //name of the cookie to store the refresh token 
@@ -29,6 +29,6 @@ export function readRefreshCookie(request: Request) {
 //verify where an authentication request originated 
 export function checkOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  const expected = config.APP_ORIGIN ?? new URL(request.url).origin;
+  const expected = config.app.origin ?? new URL(request.url).origin;
   if (origin && origin !== expected) throw new ApplicationError("unauthorized", "UNAUTHORIZED", "Authentication required.");
 }

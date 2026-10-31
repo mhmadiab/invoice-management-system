@@ -2,6 +2,7 @@ import type { ISchedulerRepository, ISchedulerLock } from "@/types/repositories"
 import type { Database } from "./transaction";
 import { Pool } from "pg";
 import type { NotificationType, Prisma, ReminderType } from "@/app/generated/prisma/client";
+import config from "@/config";
 
 // Prisma cannot express session advisory locks. This locks only the worker and
 // uses no raw SQL for application records or financial calculations.
@@ -13,7 +14,7 @@ import type { NotificationType, Prisma, ReminderType } from "@/app/generated/pri
  */
 export class PostgresSchedulerLock implements ISchedulerLock {
   async run<T>(run: () => Promise<T>) {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
+    const pool = new Pool({ connectionString: config.database.url, max: 1 });
     const connection = await pool.connect();
     try {
       /** 

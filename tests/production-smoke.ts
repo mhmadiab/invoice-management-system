@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { getPrisma } from "@/prisma/client";
+import config from "@/config";
 
-assert.equal(new URL(process.env.DATABASE_URL ?? "").pathname, "/invoice_api_test", "Smoke tests require the isolated test database.");
-const base = new URL(process.env.TEST_BASE_URL ?? "http://127.0.0.1:3308");
+assert.equal(new URL(config.database.url ?? "").pathname, "/invoice_api_test", "Smoke tests require the isolated test database.");
+const base = new URL(config.tests.baseUrl);
 assert.ok(["127.0.0.1", "localhost"].includes(base.hostname), "Smoke tests only target a local server.");
 const database = getPrisma();
 const email = `smoke-${randomUUID()}@example.com`;

@@ -1,5 +1,6 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import config from "@/config";
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
@@ -13,8 +14,7 @@ export async function readLogo(reference: string | null): Promise<Buffer | undef
     return readFile(target);
   }
   const url = new URL(reference);
-  const allowed = (process.env.PDF_ASSET_ORIGINS ?? "").split(",").map(value => value.trim());
-  if (url.protocol !== "https:" || url.username || url.password || !allowed.includes(url.origin)) throw new Error("Logo origin is not configured.");
+  if (url.protocol !== "https:" || url.username || url.password || !config.pdf.assetOrigins.includes(url.origin)) throw new Error("Logo origin is not configured.");
   const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(5000) });
   if (!response.ok || !response.body) throw new Error("Logo unavailable.");
   const chunks: Uint8Array[] = [];

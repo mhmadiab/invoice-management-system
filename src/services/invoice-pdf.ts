@@ -6,6 +6,7 @@ import { required } from "@/types/errors";
 import { dateOnly } from "./dates";
 import { invoiceBalance } from "./financial";
 import { readLogo } from "./pdf-assets";
+import config from "@/config";
 
 export type { DocumentInvoice } from "@/types/repositories";
 export const pdfFilename = (invoice: DocumentInvoice) => `${(invoice.invoiceNumber ?? `draft-${invoice.invoiceId}`).replace(/[^A-Za-z0-9._-]/g, "_")}.pdf`;
@@ -19,7 +20,7 @@ export async function renderInvoicePdf(invoice: DocumentInvoice): Promise<Buffer
     document.on("end", () => resolve(Buffer.concat(chunks)));
     document.on("error", reject);
   });
-  if (process.env.PDF_FONT_PATH) document.font(process.env.PDF_FONT_PATH);
+  if (config.pdf.fontPath) document.font(config.pdf.fontPath);
   document.fontSize(20).text(invoice.business.businessName);
   document.fontSize(10).text([invoice.business.email, invoice.business.phone, invoice.business.address, invoice.business.taxIdentifier].filter(Boolean).join("\n"));
   if (logo) document.image(logo, 440, 48, { fit: [100, 60] });

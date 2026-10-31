@@ -1,11 +1,11 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
-import "dotenv/config";
+import config from "../config";
 
 const prisma = new PrismaClient({
     adapter : new PrismaPg({
-        connectionString: process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/invoice_management",
+        connectionString: config.database.url || "postgresql://postgres:postgres@localhost:5432/invoice_management",
     }),
 });
 

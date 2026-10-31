@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import { getPrisma } from "@/prisma/client";
 import { dateOnly, DAY_MS } from "@/services/dates";
 import { allOperations, assertResponse, routeFile } from "./contract-helper";
+import config from "@/config";
 
 type Route = (request: Request, context: { params: Promise<Record<string, string>> }) => Promise<Response>;
 type CallOptions = { params?: Record<string, string | number>; query?: Record<string, string | number>; body?: unknown; token?: string; cookie?: string; expected?: number };
@@ -39,7 +40,7 @@ async function call(method: string, pathname: string, options: CallOptions = {})
 }
 
 test("V1 API: PostgreSQL workflows, contract responses, isolation, and concurrency", { timeout: 120000 }, async t => {
-  const url = process.env.DATABASE_URL;
+  const url = config.database.url;
   assert.ok(url && new URL(url).pathname === "/invoice_api_test", "Use only the separate invoice_api_test database.");
   process.env.AUTH_JWT_SECRET = "integration-test-secret-at-least-thirty-two-bytes";
   const database = getPrisma();

@@ -1,16 +1,16 @@
 import { createHash, randomBytes } from "node:crypto";
 import { SignJWT, jwtVerify, errors } from "jose";
 import { ApplicationError } from "@/types/errors";
-import config from '@/config'
+import config from "@/config";
 
-export const ACCESS_SECONDS = Number(config.auth.ACCESS_SECONDS ?? 15 * 60);
-export const SESSION_SECONDS = Number(config.auth.SESSION_SECONDS ?? 30 * 24 * 60 * 60);
+export const ACCESS_SECONDS = config.auth.accessSeconds;
+export const SESSION_SECONDS = config.auth.sessionSeconds;
 const issuer = "invoice-management-system";
 const audience = "invoice-management-api-v1";
 
 //Read the application's JWT secret, validate it, and convert it into the key format
 export function signingKey() {
-  const secret = config.auth.JWTSecrete;
+  const secret = config.auth.jwtSecret;
   if (!secret || Buffer.byteLength(secret) < 32) throw new Error("AUTH_JWT_SECRET must contain at least 32 bytes.");
   return new TextEncoder().encode(secret);
 }

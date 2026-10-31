@@ -123,7 +123,10 @@ for route, validation, service, and repository mappings.
 
 ## Runtime configuration
 
-Use the existing `.env` mechanism. Do not commit secrets.
+Use the existing `.env` mechanism. Application code reads runtime settings through
+[`src/config/index.ts`](../src/config/index.ts); do not read environment variables
+directly from services, repositories, or scripts. Prisma's schema retains its
+required `env("DATABASE_URL")` binding. Do not commit secrets.
 
 | Variable | Purpose |
 | --- | --- |
