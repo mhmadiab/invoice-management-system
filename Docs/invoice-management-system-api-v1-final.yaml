@@ -27,7 +27,14 @@ info:
     Reminders, Dashboard, Reports, Settings, and Administrator Notifications.
 
     Deletion policy: V1 does not expose hard-delete operations for business and financial resources. Historical records must
-    be preserved for traceability and financial consistency.'
+    be preserved for traceability and financial consistency.
+
+    Financial precision: Monetary values and quantities supplied by clients have at most two decimal places and must fit
+    Decimal(12,2), with a maximum of 9999999999.99. Invoice tax rates must fit Decimal(5,2), with a maximum of 999.99.
+    Calculations use decimal arithmetic. Round each quantity-times-unit-price line total to two decimals using half-up;
+    subtotal is the sum of rounded line totals. Round the discount amount to two decimals using half-up, then calculate
+    and round tax on the discounted subtotal using half-up. Total is discounted subtotal plus rounded tax. Reject
+    discounts exceeding the subtotal and calculated values exceeding storage bounds.'
 servers:
 - url: http://localhost:3000/api/v1
   description: Local development server
@@ -3660,6 +3667,7 @@ components:
           - Beirut, Lebanon
         type:
           $ref: '#/components/schemas/CustomerType'
+          default: individual
       examples:
       - name: John Smith
         email: john.smith@example.com
@@ -3838,13 +3846,17 @@ components:
           examples:
           - 301
         invoiceNumber:
-          type: string
+          type:
+          - string
+          - 'null'
           minLength: 1
           description: Assigned invoice number.
           examples:
           - INV-1001
         issueDate:
-          type: string
+          type:
+          - string
+          - 'null'
           format: date
           description: Date on which the invoice was issued.
           examples:
@@ -4146,6 +4158,8 @@ components:
           type: number
           format: double
           minimum: 0
+          maximum: 9999999999.99
+          multipleOf: 0.01
           description: Monetary value of the contract.
           examples:
           - 25000.0
@@ -4200,6 +4214,8 @@ components:
           type: number
           format: double
           minimum: 0
+          maximum: 9999999999.99
+          multipleOf: 0.01
           description: Updated monetary value of the contract.
           examples:
           - 30000.0
@@ -4328,6 +4344,8 @@ components:
         quantity:
           type: number
           exclusiveMinimum: 0
+          maximum: 9999999999.99
+          multipleOf: 0.01
           description: Quantity of the invoiced item.
           examples:
           - 10
@@ -4335,6 +4353,8 @@ components:
           type: number
           format: double
           minimum: 0
+          maximum: 9999999999.99
+          multipleOf: 0.01
           description: Price per unit before discount and tax.
           examples:
           - 100.0
@@ -4390,6 +4410,8 @@ components:
           type: number
           format: double
           minimum: 0
+          maximum: 9999999999.99
+          multipleOf: 0.01
           description: Discount percentage or fixed monetary value depending on type.
           examples:
           - 10
@@ -4436,6 +4458,8 @@ components:
           type: number
           format: double
           minimum: 0
+          maximum: 999.99
+          multipleOf: 0.01
           description: Tax percentage applied after discount. If omitted, the configured default tax may be used.
           examples:
           - 11
@@ -4463,6 +4487,8 @@ components:
           type: number
           format: double
           minimum: 0
+          maximum: 999.99
+          multipleOf: 0.01
           examples:
           - 11
     Invoice:
@@ -4793,6 +4819,8 @@ components:
           type: number
           format: double
           exclusiveMinimum: 0
+          maximum: 9999999999.99
+          multipleOf: 0.01
           description: Amount received; cannot exceed current remaining balance.
           examples:
           - 500.0
@@ -5142,7 +5170,9 @@ components:
           format: int64
           readOnly: true
         invoiceNumber:
-          type: string
+          type:
+          - string
+          - 'null'
           readOnly: true
         customerId:
           type: integer
@@ -5186,7 +5216,9 @@ components:
           format: int64
           readOnly: true
         invoiceNumber:
-          type: string
+          type:
+          - string
+          - 'null'
           readOnly: true
         customerId:
           type: integer
@@ -5492,6 +5524,7 @@ components:
           type:
           - string
           - 'null'
+          maxLength: 500
           description: Stored URL or path referencing the business logo.
     UpdateBusinessSettingsRequest:
       type: object
@@ -5527,6 +5560,7 @@ components:
           type:
           - string
           - 'null'
+          maxLength: 500
     BusinessSettingsResponse:
       type: object
       additionalProperties: false
@@ -5558,6 +5592,7 @@ components:
           format: double
           minimum: 0
           maximum: 100
+          multipleOf: 0.01
     UpdateInvoiceSettingsRequest:
       type: object
       additionalProperties: false
@@ -5581,6 +5616,7 @@ components:
           format: double
           minimum: 0
           maximum: 100
+          multipleOf: 0.01
     InvoiceSettingsResponse:
       type: object
       additionalProperties: false
