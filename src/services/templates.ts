@@ -13,6 +13,7 @@ export function validateTemplate(template: { subject: string; body: string }) {
     if (remainder.includes("{{") || remainder.includes("}}")) invalid(field, "Invalid placeholder syntax.");
   }
 }
+/** performs the replacement */
 export function renderTemplate(text: string, values: Record<string, string>) {
   return text.replace(/{{\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}/g, (_match, placeholder: string) => values[aliases[placeholder] ?? placeholder] ?? "");
 }

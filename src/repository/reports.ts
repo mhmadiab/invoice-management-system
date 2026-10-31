@@ -1,6 +1,10 @@
 import type { IReportRepository } from "@/types/repositories";
 import type { Database } from "./transaction";
 
+
+/** 
+ * Repository for Reports used also by Dashboard
+ */
 export class PrismaReportRepository implements IReportRepository {
   constructor(private readonly resolveDatabase: () => Database) {}
 

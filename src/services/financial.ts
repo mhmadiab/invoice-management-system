@@ -33,6 +33,7 @@ export function invoiceBalance(invoice: BalanceSource, now = new Date()) {
   const isOverdue = overdueDays > 0 && remainingBalance.gt(0) && invoice.status !== "cancelled" && invoice.status !== "void";
   return { paidAmount, remainingBalance, isOverdue, daysOverdue: isOverdue ? overdueDays : 0 };
 }
+/** determine which invocies are out standing ==> issued or partialy paid */
 export function isOutstanding(invoice: BalanceSource) {
   return (invoice.status === "issued" || invoice.status === "partially_paid") && invoiceBalance(invoice).remainingBalance.gt(0);
 }

@@ -17,10 +17,11 @@ export class PrismaSettingsRepository implements ISettingsRepository {
 
   update(businessId: bigint, data: Prisma.SystemSettingUpdateInput) { return this.database.systemSetting.update({ where: { businessId }, data }); }
 
+  /** This atomically increments the stored numeric sequence by one. */
   reserveNumber(businessId: bigint) { return this.database.systemSetting.update({ where: { businessId }, data: { invoiceNumberNextValue: { increment: 1 } } }); }
 
   templates(businessId: bigint) { return this.database.emailTemplate.findMany({ where: { businessId }, orderBy: { templateType: "asc" } }); }
-
+  /**This identifies a template by both its business and its type. For example, two businesses can have different templates of the same type without overwriting one another. */
   template(businessId: bigint, templateType: EmailTemplateType) { return this.database.emailTemplate.findUnique({ where: { businessId_templateType: { businessId, templateType } } }); }
 
   updateTemplate(businessId: bigint, templateType: EmailTemplateType, data: { subject: string; body: string }) { return this.database.emailTemplate.update({ where: { businessId_templateType: { businessId, templateType } }, data }); }

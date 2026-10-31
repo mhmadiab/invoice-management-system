@@ -2,6 +2,7 @@ import type { Invoice, SystemSetting, ReminderType } from "@/app/generated/prism
 import { DAY_MS, today } from "./dates";
 import { overdueDays } from "./settings";
 
+/** helper determines the reminder type and scheduled date based on the invoice, settings, and current time. */
 export function reminderSchedule(invoice: Pick<Invoice, "dueDate" | "issueDate">, settings: SystemSetting, now: Date) {
   const schedule: { type: ReminderType; at: Date }[] = [];
   const add = (type: ReminderType, offset: number) => {
